@@ -13,19 +13,26 @@
 #include <errno.h>
 
 
-#define SPARCLE_VERSION_MAJOR @SPARCLE_VERSION_MAJOR@
-#define SPARCLE_VERSION_MINOR @SPARCLE_VERSION_MINOR@
+#define SPARCLE_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define SPARCLE_VERSION_MINOR @PROJECT_VERSION_MINOR@
 
 
 /* ******************************************************* */
-/** \addgroup Utility
+/** \addtogroup Utility
  * @{ */
 
-/** \addgroup Spin lock
+/** \addtogroup spin_lock Spin lock
  * @{ */
 typedef atomic_flag volatile sparcle_spin_lock_t;
+/** sparcle_spin_lock_tの静的初期化子
+ * 
+ * sparcle_spin_lock_t mylock = SPARCLE_SPIN_LOCK_UNLOCKED
+ */
 #define SPARCLE_SPIN_LOCK_UNLOCKED ATOMIC_FLAG_INIT
 
+/** sparcle_spin_lock_tを動的に初期化する
+ * @param 初期するspin_lockへのポインタ
+ */
 inline void sparcle_spin_lock_init(sparcle_spin_lock_t* lck) {
   atomic_flag_clear(lck);
 }
@@ -36,9 +43,10 @@ inline void sparcle_spin_lock(sparcle_spin_lock_t* lck) {
 inline void sparcle_spin_unlock(sparcle_spin_lock_t* lck) {
   atomic_flag_clear_explicit(lck, memory_order_release);
 }
-/* @} */
 
-/** \addgroup Read-Write lock
+/** @} */
+
+/** \addtogroup read_write_lock Read-Write lock
  * @{ */
 typedef atomic_uintptr_t volatile sparcle_rw_lock_t;
 #define SPARCLE_RW_LOCK_INIT ATOMIC_VAR_INIT(0);
@@ -80,7 +88,7 @@ inline void sparcle_write_unlock(sparcle_rw_lock_t* lck) {
 /** @} */
 /** @} */
 /* ******************************************************* */
-/** \addgroup Scheduler
+/** \addtogroup Scheduler
  * @{ */
 
 typedef struct tag_sparcle_scheduler* sparcle_scheduler_t;
@@ -93,7 +101,7 @@ inline bool sparcle_is_worker_thread() { return sparcle_current_scheduler != NUL
 
 /** @} */
 /* ******************************************************* */
-/** \addgroup Thread
+/** \addtogroup Thread
  * @{ */
 
 typedef struct tag_sparcle_thread* sparcle_thread_t;
@@ -120,7 +128,7 @@ void sparcle_thread_wakeup(sparcle_thread_t thread);
 
 /** @} */
 /* ******************************************************* */
-/** \addgroup Wait queue
+/** \addtogroup wait_queue Wait queue
  * @{ */
 
 typedef struct {
@@ -150,7 +158,7 @@ void sparcle_wait_queue_broadcast(sparcle_wait_queue_t* q);
 
 /** @} */
 /* ******************************************************* */
-/** \addgroup Mutex
+/** \addtogroup Mutex
  * @{ */
 typedef struct {
   sparcle_wait_queue_t wait_queue_;
@@ -181,7 +189,7 @@ inline int sparcle_mutex_destroy(sparcle_mutex_t *mutex) { return 0; }
 
 /** @} */
 /* ******************************************************* */
-/** \addgroup Condition variable
+/** \addtogroup condition_variable Condition variable
  * @{ */
 typedef struct {
   sparcle_wait_queue_t wait_queue_;
@@ -217,7 +225,7 @@ inline int sparcle_cond_destroy(sparcle_cond_t *cond) {
 
 /** @} */
 /* ******************************************************* */
-/** \addgroup Semaphore
+/** \addtogroup Semaphore
  * @{ */
 typedef struct {
   sparcle_mutex_t mutex_;

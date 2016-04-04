@@ -13,7 +13,7 @@
 #include <unistd.h>
 #include "sparcle.h"
 
-/** \addgroup Scheduler
+/** \addtogroup Scheduler
  * @{ */
 _Thread_local static ucontext_t native_context_;
 _Thread_local sparcle_scheduler_t sparcle_current_scheduler = NULL;
@@ -44,7 +44,7 @@ struct tag_sparcle_thread {
 
 
 /* **************************************************************** */
-/** \addgroup Scheduler
+/** \addtogroup Scheduler
  * @{ */
 
 /*
@@ -201,7 +201,7 @@ static void* sparcle_worker_main(void* sched) {
 
 /** @} */
 /* **************************************************************** */
-/** \addgroup Thread
+/** \addtogroup Thread
  * @{ */
 
 static void sparcle_thread_entry(void* (*f)(void*), void* arg) {
@@ -267,7 +267,7 @@ void sparcle_thread_wakeup(sparcle_thread_t x) {
 
 /** @} */
 /* **************************************************************** */
-/** \addgroup Wait queue
+/** \addtogroup wait_queue Wait queue
  * @{ */
 
 
@@ -313,7 +313,7 @@ void sparcle_wait_queue_broadcast(sparcle_wait_queue_t* q) {
 
 /** @} */
 /* **************************************************************** */
-/** \addgroup Mutex
+/** \addtogroup Mutex
  * @{ */
 
 int sparcle_mutex_lock(sparcle_mutex_t *mutex) {
@@ -340,7 +340,7 @@ int sparcle_mutex_unlock(sparcle_mutex_t *mutex) {
 
 /** @} */
 /* **************************************************************** */
-/** \addgroup Condition variable
+/** \addtogroup condition_variable Condition variable
  * @{ */
 
 int sparcle_cond_wait(sparcle_cond_t* cond, sparcle_mutex_t* mutex) {
@@ -354,7 +354,7 @@ int sparcle_cond_wait(sparcle_cond_t* cond, sparcle_mutex_t* mutex) {
 
 /** @} */
 /* **************************************************************** */
-/** \addgroup Semaphore
+/** \addtogroup Semaphore
  * @{ */
 
 int sparcle_semaphore_get(sparcle_semaphore_t* semaphore, size_t n) {
