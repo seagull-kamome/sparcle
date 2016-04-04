@@ -36,3 +36,11 @@ ELSE(DOXYGEN_FOUND)
   # MESSAGE (WARNING "doxygen binary couldn't be found")
 ENDIF(DOXYGEN_FOUND)
 
+
+
+install(FILES ${PROJECT_BINARY_DIR}/sparcle.h DESTINATION include)
+install(TARGETS sparcle
+  INCLUDES DESTINATION include
+  ARCHIVE DESTINATION lib
+  )
+
