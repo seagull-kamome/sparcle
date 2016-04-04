@@ -248,14 +248,20 @@ void sparcle_thread_exit(void* retval) {
 }
 
 
-
-int sparcle_thread_suspend() {
+/** 現在のスレッドをサスペンドさせる
+ * サスペンド状態とは、いかなる待機キューに繋がらない状態での休眠を表す。
+ * 待機キューに繋がっていないので、明示的に起床させない限り永遠に休眠する。
+ */
+void sparcle_thread_suspend() {
   assert(sparcle_current_thread != NULL);
   sparcle_current_thread->state_ = SPARCLE_THREAD_STATE_SUSPEND;
   sparcle_yield();
 }
 
 
+/** サスペンド状態のスレッドを起床させる
+ * @param x 起床させるスレッド
+ */
 void sparcle_thread_wakeup(sparcle_thread_t x) {
   assert(x->next_thread_ = NULL);
   x->state_ = SPARCLE_THREAD_STATE_IDLE;

@@ -21,12 +21,25 @@
 /** \addtogroup Utility
  * @{ */
 
-/** \addtogroup spin_lock Spin lock
- * @{ */
+/** \addtogroup mod_spin_lock Spin lock
+ * @bug このスピンロックは、ネイティブスレッドとユーザースレッドの
+ *       コンテキストスイッチを抑止していない。
+ *       よって、スピンロックを取得したままワーカースレッドがスイッチ
+ *       したり、ユーザースレッドがブロックしてしまうと無駄にCPUを食い尽くす。
+ *
+ @{ */
+
+#if defined(__cplusplus)
+extern "C" {
+#endif
+/** スピンロックオブジェクト
+ * スピンロックはSPARCLE_SPIN_LOCK_UNLOCKによる静的な初期化か、
+ * あるいはsparcle_spin_lock_initによる動的な初期化を行う必要がある。
+ */
 typedef atomic_flag volatile sparcle_spin_lock_t;
 /** sparcle_spin_lock_tの静的初期化子
  * 
- * sparcle_spin_lock_t mylock = SPARCLE_SPIN_LOCK_UNLOCKED
+ * sparcle_spin_lock_t mylock = SPARCLE_SPIN_LOCK_UNLOCKED;
  */
 #define SPARCLE_SPIN_LOCK_UNLOCKED ATOMIC_FLAG_INIT
 
@@ -37,17 +50,68 @@ inline void sparcle_spin_lock_init(sparcle_spin_lock_t* lck) {
   atomic_flag_clear(lck);
 }
 
+/** スピンロックを取得する
+ * @param lck 取得するスピンロック
+ */
 inline void sparcle_spin_lock(sparcle_spin_lock_t* lck) {
   while (atomic_flag_test_and_set_explicit(lck, memory_order_acquire)) ; // spin
 }
+
+/** スピンロックの取得を試みる
+ * @param lck 取得を試みるスピンロック
+ * @return ロックできた場合はtrue。できなかった場合はfalse。
+ */
+inline bool sparcle_spin_trylock(sparcle_spin_lock_t* lck) {
+  return atomic_flag_test_and_set_explicit(lck, memory_order_acquire);
+}
+
+/** スピンロックを開放する
+ * @param lck 開放するスピンロック
+ */
 inline void sparcle_spin_unlock(sparcle_spin_lock_t* lck) {
   atomic_flag_clear_explicit(lck, memory_order_release);
 }
 
+#if defined(__cplusplus)
+}
+
+namespace sparcle {
+  /** sparcle_spin_lock_tのラッパ
+   * @see mod_spin_lock
+   *
+   * \b Concepts: BasicLockable, Lockable
+   */
+  class spin_lock : private ::spin_lock_t {
+  public:
+    inline spin_lock() { ::sparcle_spin_lock_init(this); }
+    inline ~spin_lock() { }
+    
+    inline void lock() { ::sparcle_spin_lock(this); }
+    inline void unlock() { ::sparcle_spin_unlock(this); }
+    inline bool try_lock() { ::sparcle_spin_trylock(this); }
+  };
+}
+
+#endif
 /** @} */
 
-/** \addtogroup read_write_lock Read-Write lock
+
+
+/** \addtogroup mod_read_write_lock Read-Write lock
+ *
+ * スピンロックを使ったtwo-phase-lockを提供する。
+ * @bug spin_lockと同じくネイティブスレッドのコンテキストスイッチを抑止していない。
+ *
  * @{ */
+
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
+/** ロックオブジェクト
+ * ロックオブジェクトはSPARCLE_RW_LOCK_INITによる静的な初期化か、
+ * sparcle_rw_lock_initによる動的な初期化を行う必要がある。
+ */
 typedef atomic_uintptr_t volatile sparcle_rw_lock_t;
 #define SPARCLE_RW_LOCK_INIT ATOMIC_VAR_INIT(0);
 
@@ -55,35 +119,59 @@ inline void sparcle_rw_lock_init(sparcle_rw_lock_t* lck) {
   atomic_init(lck, 0);
 }
 
+/** 読み取りロックを取得する
+ * @param lck 取得するロックオブジェクト
+ */
 inline void sparcle_read_lock(sparcle_rw_lock_t* lck) {
   uintptr_t x = atomic_load_explicit(lck, memory_order_acquire);
   while ((x & 1) != 0 || ! atomic_compare_exchange_weak(lck, &x, x + 2))
     ; // spin
 }
 
+/** 読み取りロックの取得を試みる
+ * @param lck 取得を試みるロックオブジェクト
+ * @return ロックできた場合はtrue。できなかった場合はfalse。
+ */
 inline bool sparcle_try_read_lock(sparcle_rw_lock_t* lck) {
   uintptr_t x = atomic_load_explicit(lck, memory_order_acquire);
   return ((x & 1) == 0) && atomic_compare_exchange_strong(lck, &x, x + 2);
 }
 
+/** 読み取りロックを開放する
+ * @param lck 開放するロックオブジェクト
+ */
 inline void sparcle_read_unlock(sparcle_rw_lock_t* lck) { atomic_fetch_sub(lck, 2); }
 
 
-
+/** 書き込みロックを取得する
+ * @param lck 取得するロックオブジェクト
+ */
 inline void sparcle_write_lock(sparcle_rw_lock_t* lck) {
   uintptr_t x = atomic_load_explicit(lck, memory_order_acquire);
   while (x != 0 || ! atomic_compare_exchange_weak(lck, &x, 1) )
     ; // spin
 }
 
+/** 書き込みロックの取得を試みる
+ * @param lck 取得を試みるロックオブジェクト
+ * @return ロックできた場合はtrue。できなかった場合はfalse。
+ */
 inline bool sparcle_try_write_lock(sparcle_rw_lock_t* lck) {
   uintptr_t x = atomic_load_explicit(lck, memory_order_acquire);
   return x == 0 && atomic_compare_exchange_strong(lck, &x, 1);
 }
 
+/** 書き込みロックを開放する
+ * @param lck 開放するロックオブジェクト
+ */
 inline void sparcle_write_unlock(sparcle_rw_lock_t* lck) {
   atomic_store_explicit(lck, 0, memory_order_release);
 }
+
+#if defined(__cplusplus)
+}
+#endif
+
 
 /** @} */
 /** @} */
@@ -122,7 +210,7 @@ int sparcle_thread_new(
         sparcle_thread_t* thread, sparcle_attr_t const* attr,
         void* (*start_routine)(void*), void* arg);
 void sparcle_thread_exit(void* retval);
-int sparcle_thread_suspend();
+void sparcle_thread_suspend();
 void sparcle_thread_wakeup(sparcle_thread_t thread);
 
 
