@@ -16,6 +16,9 @@
 #define SPARCLE_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
 #define SPARCLE_VERSION_MINOR @PROJECT_VERSION_MINOR@
 
+#if !defined(__Check_return)
+#  define __Check_return __attribute((warn_unused_result))
+#endif
 
 /* ******************************************************* */
 /** \addtogroup Utility
@@ -46,14 +49,14 @@ typedef atomic_flag volatile sparcle_spin_lock_t;
 /** sparcle_spin_lock_tを動的に初期化する
  * @param 初期するspin_lockへのポインタ
  */
-inline void sparcle_spin_lock_init(sparcle_spin_lock_t* lck) {
+inline void __nonnull((1)) sparcle_spin_lock_init(sparcle_spin_lock_t* lck) {
   atomic_flag_clear(lck);
 }
 
 /** スピンロックを取得する
  * @param lck 取得するスピンロック
  */
-inline void sparcle_spin_lock(sparcle_spin_lock_t* lck) {
+inline void __nonnull((1)) sparcle_spin_lock(sparcle_spin_lock_t* lck) {
   while (atomic_flag_test_and_set_explicit(lck, memory_order_acquire)) ; // spin
 }
 
@@ -61,7 +64,7 @@ inline void sparcle_spin_lock(sparcle_spin_lock_t* lck) {
  * @param lck 取得を試みるスピンロック
  * @return ロックできた場合はtrue。できなかった場合はfalse。
  */
-inline bool sparcle_spin_trylock(sparcle_spin_lock_t* lck) {
+inline bool __nonnull((1)) __Check_return sparcle_spin_trylock(sparcle_spin_lock_t* lck) {
   return atomic_flag_test_and_set_explicit(lck, memory_order_acquire);
 }
 
@@ -88,7 +91,7 @@ namespace sparcle {
     
     inline void lock() { ::sparcle_spin_lock(this); }
     inline void unlock() { ::sparcle_spin_unlock(this); }
-    inline bool try_lock() { ::sparcle_spin_trylock(this); }
+    inline bool __Check_return try_lock() { ::sparcle_spin_trylock(this); }
   };
 }
 
@@ -115,14 +118,14 @@ extern "C" {
 typedef atomic_uintptr_t volatile sparcle_rw_lock_t;
 #define SPARCLE_RW_LOCK_INIT ATOMIC_VAR_INIT(0);
 
-inline void sparcle_rw_lock_init(sparcle_rw_lock_t* lck) {
+inline void __nonnull((1)) sparcle_rw_lock_init(sparcle_rw_lock_t* lck) {
   atomic_init(lck, 0);
 }
 
 /** 読み取りロックを取得する
  * @param lck 取得するロックオブジェクト
  */
-inline void sparcle_read_lock(sparcle_rw_lock_t* lck) {
+inline void __nonnull((1)) sparcle_read_lock(sparcle_rw_lock_t* lck) {
   uintptr_t x = atomic_load_explicit(lck, memory_order_acquire);
   while ((x & 1) != 0 || ! atomic_compare_exchange_weak(lck, &x, x + 2))
     ; // spin
@@ -132,7 +135,7 @@ inline void sparcle_read_lock(sparcle_rw_lock_t* lck) {
  * @param lck 取得を試みるロックオブジェクト
  * @return ロックできた場合はtrue。できなかった場合はfalse。
  */
-inline bool sparcle_try_read_lock(sparcle_rw_lock_t* lck) {
+inline bool __nonnull((1)) __Check_return sparcle_try_read_lock(sparcle_rw_lock_t* lck) {
   uintptr_t x = atomic_load_explicit(lck, memory_order_acquire);
   return ((x & 1) == 0) && atomic_compare_exchange_strong(lck, &x, x + 2);
 }
@@ -140,13 +143,13 @@ inline bool sparcle_try_read_lock(sparcle_rw_lock_t* lck) {
 /** 読み取りロックを開放する
  * @param lck 開放するロックオブジェクト
  */
-inline void sparcle_read_unlock(sparcle_rw_lock_t* lck) { atomic_fetch_sub(lck, 2); }
+inline void __nonnull((1)) sparcle_read_unlock(sparcle_rw_lock_t* lck) { atomic_fetch_sub(lck, 2); }
 
 
 /** 書き込みロックを取得する
  * @param lck 取得するロックオブジェクト
  */
-inline void sparcle_write_lock(sparcle_rw_lock_t* lck) {
+inline void __nonnull((1)) sparcle_write_lock(sparcle_rw_lock_t* lck) {
   uintptr_t x = atomic_load_explicit(lck, memory_order_acquire);
   while (x != 0 || ! atomic_compare_exchange_weak(lck, &x, 1) )
     ; // spin
@@ -156,7 +159,7 @@ inline void sparcle_write_lock(sparcle_rw_lock_t* lck) {
  * @param lck 取得を試みるロックオブジェクト
  * @return ロックできた場合はtrue。できなかった場合はfalse。
  */
-inline bool sparcle_try_write_lock(sparcle_rw_lock_t* lck) {
+inline bool __nonnull((1)) __Check_return sparcle_try_write_lock(sparcle_rw_lock_t* lck) {
   uintptr_t x = atomic_load_explicit(lck, memory_order_acquire);
   return x == 0 && atomic_compare_exchange_strong(lck, &x, 1);
 }
@@ -164,7 +167,7 @@ inline bool sparcle_try_write_lock(sparcle_rw_lock_t* lck) {
 /** 書き込みロックを開放する
  * @param lck 開放するロックオブジェクト
  */
-inline void sparcle_write_unlock(sparcle_rw_lock_t* lck) {
+inline void __nonnull((1)) sparcle_write_unlock(sparcle_rw_lock_t* lck) {
   atomic_store_explicit(lck, 0, memory_order_release);
 }
 
@@ -182,10 +185,9 @@ inline void sparcle_write_unlock(sparcle_rw_lock_t* lck) {
 typedef struct tag_sparcle_scheduler* sparcle_scheduler_t;
 extern _Thread_local sparcle_scheduler_t sparcle_current_scheduler;
 
-sparcle_scheduler_t sparcle_scheduler_new(size_t num_workers);
-void sparcle_scheduler_delete(sparcle_scheduler_t sched);
-void sparcle_scheduler_stop(sparcle_scheduler_t sched);
-inline bool sparcle_is_worker_thread() { return sparcle_current_scheduler != NULL; }
+sparcle_scheduler_t __Check_return sparcle_scheduler_new(size_t num_workers);
+void __nonnull((1)) sparcle_scheduler_delete(sparcle_scheduler_t sched);
+inline bool __Check_return sparcle_is_worker_thread() { return sparcle_current_scheduler != NULL; }
 
 /** @} */
 /* ******************************************************* */
@@ -205,13 +207,13 @@ extern _Thread_local sparcle_thread_t sparcle_current_thread;
 inline int sparcle_attr_init(sparcle_attr_t* attr) { return 0; } // FIXME:
 inline int sparcle_attr_destroy(sparcle_attr_t* attr) { return 0; } // FIXME:
 
-int sparcle_thread_new(
+int __nonnull((1, 2, 4)) __Check_return sparcle_thread_new(
         sparcle_scheduler_t sched,
         sparcle_thread_t* thread, sparcle_attr_t const* attr,
         void* (*start_routine)(void*), void* arg);
 void sparcle_thread_exit(void* retval);
 void sparcle_thread_suspend();
-void sparcle_thread_wakeup(sparcle_thread_t thread);
+void __nonnull((1)) sparcle_thread_wakeup(sparcle_thread_t thread);
 
 
 /** @} */
@@ -224,25 +226,25 @@ typedef struct {
 } sparcle_wait_queue_t;
 
 #define SPARCLE_WAIT_QUEUE_INITIALIZER { ATOMIC_INIT((uintptr_t)NULL) }
-inline void sparcle_wait_queue_init(sparcle_wait_queue_t* q) {
+inline void __nonnull((1)) sparcle_wait_queue_init(sparcle_wait_queue_t* q) {
   atomic_init(&q->q_, (uintptr_t)NULL);
 }
 
 /** キューで待つ
  * @param q 待ち合わせを行うキュー
  */
-void sparcle_wait_queue_wait(sparcle_wait_queue_t* q);
+void __nonnull((1)) sparcle_wait_queue_wait(sparcle_wait_queue_t* q);
 
 /** キューで待っているスレッドを１つ起床させる
  * @param q 対象のキュー
  * @return 起床できたらそのスレッドを返す
  */
-sparcle_thread_t sparcle_wait_queue_signal(sparcle_wait_queue_t* q);
+sparcle_thread_t __nonnull((1)) sparcle_wait_queue_signal(sparcle_wait_queue_t* q);
 
 /** キューで待っているスレッドを全て起床させる
  * @param q 対象のキュー
  */
-void sparcle_wait_queue_broadcast(sparcle_wait_queue_t* q);
+void __nonnull((1)) sparcle_wait_queue_broadcast(sparcle_wait_queue_t* q);
 
 /** @} */
 /* ******************************************************* */
@@ -261,18 +263,18 @@ typedef int sparcle_mutexattr_t;
 inline int sparcle_mutexattr_init(sparcle_mutexattr_t* attr) { return 0; }
 inline int sparcle_mutexattr_destroy(sparcle_mutexattr_t* attr) { return 0; }
 
-inline int sparcle_mutex_init(sparcle_mutex_t *mutex, const pthread_mutexattr_t *mutexattr) {
+inline int __nonnull((1)) sparcle_mutex_init(sparcle_mutex_t *mutex, const pthread_mutexattr_t *mutexattr) {
   sparcle_wait_queue_init(&mutex->wait_queue_);
   atomic_flag_clear(&mutex->flag_);
   return 0;
 }
 
-int sparcle_mutex_lock(sparcle_mutex_t *mutex);
-inline int sparcle_mutex_trylock(sparcle_mutex_t *mutex) {
+int __nonnull((1)) sparcle_mutex_lock(sparcle_mutex_t *mutex);
+inline int __nonnull((1)) __Check_return sparcle_mutex_trylock(sparcle_mutex_t *mutex) {
   return atomic_flag_test_and_set(&mutex->flag_) == false;
 }
-inline int sparcle_mutex_unlock(sparcle_mutex_t *mutex);
-inline int sparcle_mutex_destroy(sparcle_mutex_t *mutex) { return 0; }
+inline int __nonnull((1)) sparcle_mutex_unlock(sparcle_mutex_t *mutex);
+inline int __nonnull((1)) sparcle_mutex_destroy(sparcle_mutex_t *mutex) { return 0; }
 
 
 /** @} */
@@ -289,24 +291,25 @@ typedef int sparcle_condattr_t;
 inline int sparcle_condattr_init(sparcle_condattr_t* attr) { return 0; }
 inline int sparcle_condattr_destroy(sparcle_condattr_t* attr) { return 0; }
 
-inline int sparcle_cond_init(sparcle_cond_t* cond, sparcle_condattr_t* cond_attr) {
+inline int __nonnull((1)) sparcle_cond_init(sparcle_cond_t* cond, sparcle_condattr_t* cond_attr) {
   sparcle_wait_queue_init(&cond->wait_queue_);
   return 0;
 }
 
-inline int sparcle_cond_signal(sparcle_cond_t *cond) {
+inline int __nonnull((1)) sparcle_cond_signal(sparcle_cond_t *cond) {
   sparcle_wait_queue_signal(&cond->wait_queue_);
   return 0;
 }
-inline int sparcle_cond_broadcast(sparcle_cond_t *cond) {
+inline int __nonnull((1)) sparcle_cond_broadcast(sparcle_cond_t *cond) {
   sparcle_wait_queue_broadcast(&cond->wait_queue_);
+  return 0;
 }
 
-int sparcle_cond_wait(sparcle_cond_t *cond, sparcle_mutex_t *mutex);
+int __nonnull((1, 2)) sparcle_cond_wait(sparcle_cond_t *cond, sparcle_mutex_t *mutex);
 
 // int sparcle_cond_timedwait(sparcle_cond_t *cond, sparcle_mutex_t *mutex, const struct timespec *abstime);
 
-inline int sparcle_cond_destroy(sparcle_cond_t *cond) {
+inline int __nonnull((1)) sparcle_cond_destroy(sparcle_cond_t *cond) {
   return (atomic_load(&cond->wait_queue_.q_) != (uintptr_t)NULL)? EBUSY : 0;
 }
 
@@ -327,7 +330,7 @@ typedef int sparcle_semattr_t;
 inline int sparcle_semattr_init(sparcle_semattr_t* attr) { return 0; }
 inline int sparcle_semattr_destroy(sparcle_semattr_t* attr) { return 0; }
 
-inline int sparcle_semaphore_init(sparcle_semaphore_t* semaphore, size_t n, sparcle_semattr_t* attr)
+inline int __nonnull((1)) sparcle_semaphore_init(sparcle_semaphore_t* semaphore, size_t n, sparcle_semattr_t* attr)
 {
   int r = sparcle_mutex_init(&semaphore->mutex_, NULL);
   if (r) return r;
@@ -340,8 +343,8 @@ inline int sparcle_semaphore_init(sparcle_semaphore_t* semaphore, size_t n, spar
   return 0;
 }
 
-int sparcle_semaphore_get(sparcle_semaphore_t* semaphore, size_t n);
-inline int sparcle_semaphore_tryget(sparcle_semaphore_t* semaphore, size_t n) {
+int __nonnull((1)) sparcle_semaphore_get(sparcle_semaphore_t* semaphore, size_t n);
+inline int __nonnull((1)) __Check_return sparcle_semaphore_tryget(sparcle_semaphore_t* semaphore, size_t n) {
   unsigned int x = atomic_load(&semaphore->current_);
   while (x >= n) {
     if (atomic_compare_exchange_weak(&semaphore->current_, &x, x - n))
@@ -351,12 +354,12 @@ inline int sparcle_semaphore_tryget(sparcle_semaphore_t* semaphore, size_t n) {
 }
 
 
-inline int sparcle_semaphore_release(sparcle_semaphore_t* semaphore, size_t n) {
+inline int __nonnull((1)) sparcle_semaphore_release(sparcle_semaphore_t* semaphore, size_t n) {
   atomic_fetch_add(&semaphore->current_, n);
   return 0;
 }
 
-inline int sparcle_semaphore_destroy(sparcle_semaphore_t* semaphore) {
+inline int __nonnull((1)) sparcle_semaphore_destroy(sparcle_semaphore_t* semaphore) {
   int r = sparcle_cond_destroy(&semaphore->cond_);
   if (r != 0) return r;
   sparcle_mutex_destroy(&semaphore->mutex_);

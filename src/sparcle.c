@@ -23,8 +23,9 @@ struct tag_sparcle_scheduler {
   atomic_uintptr_t idle_threads_;
   atomic_uintptr_t exhausted_threads_;
 
-  atomic_size_t current_n_native_threads_;
-  atomic_size_t native_threads_limit_;
+  size_t max_workers_;
+  atomic_size_t num_workers_;
+  atomic_size_t num_threads_;
 
   size_t default_thread_stack_size_;
 };
@@ -47,57 +48,39 @@ struct tag_sparcle_thread {
 /** \addtogroup Scheduler
  * @{ */
 
-/*
- *
+/* スケジューラを作成する
+ * @param num_workers ワーカの最大数
+ * @return 新しいスケジューラ
  */
 sparcle_scheduler_t sparcle_scheduler_new(size_t num_workers) {
   sparcle_scheduler_t p = malloc(sizeof(struct tag_sparcle_scheduler));
   atomic_init(&p->idle_threads_, 0);
   atomic_init(&p->exhausted_threads_, 0);
-  atomic_init(&p->current_n_native_threads_, 0);
-  atomic_init(&p->native_threads_limit_, num_workers);
+  p->max_workers_ = num_workers;
+  atomic_init(&p->num_workers_, 0);
+  atomic_init(&p->num_threads_, 0);
   p->default_thread_stack_size_ = 4000;
   return p;
 }
 
 
 void sparcle_scheduler_delete(sparcle_scheduler_t sched) {
-  sparcle_scheduler_stop(sched);
+  assert(sparcle_current_scheduler != sched);
+
+  while (atomic_load(&(sched->num_workers_)) > 0)
+    usleep(100000);
+
   free(sched);
 }
 
 
 
 
-void sparcle_scheduler_stop(sparcle_scheduler_t sched) {
-  assert(sched != NULL);
-  assert(sparcle_current_scheduler != sched);
-
-  while (atomic_load(&(sched->current_n_native_threads_)) > 0)
-    usleep(100000);
-}
-
-
-void sparcle_scheduler_add_thread(sparcle_thread_t x) {
-  assert(x != NULL);
-  assert(x->next_thread_ == NULL);
-
-  sparcle_scheduler_t sched = x->scheduler_;
-  assert(sched != NULL);
-
-  x->next_thread_= (sparcle_thread_t)atomic_load(&sched->idle_threads_);
-  while (! atomic_compare_exchange_weak(&sched->idle_threads_,
-                                        (uintptr_t*)&x->next_thread_, (uintptr_t)x))
-    ; // spin
-
-
-  // TODO: ワーカーの起動
-}
-
-
-
 
 /** コンテキストスイッチを行う
+ * @param x 切り替え先のスレッド。
+ *          NULLならワーカーのネイティブのコンテキストへ戻る。
+ *
  *  1. 現在のコンテキストを保存する
  *  2. 新しいスレッド x のコンテキストにスイッチする。
  *     xがNULLなら、ネイティブスレッドの本来のコンテキストへスイッチする。
@@ -112,9 +95,11 @@ void sparcle_scheduler_add_thread(sparcle_thread_t x) {
  *    A. 切り替え先スレッドxはNULLか、または現在のスレッドと同じスケジューラに属している必要がある
  *    B. 待ちに入るスレッドは予めthread構造体のwait_queue_を設定して置く
  *    C. suspend/exitするスレッドは予めステートを設定しておく
+ *    D. 自分自身へはスイッチできない
  */
 static void sparcle_switch_context(sparcle_thread_t x) {
   assert(x == NULL || x->scheduler_ == sparcle_current_scheduler);
+  assert(sparcle_current_thread != x);
 
   _Thread_local static sparcle_thread_t prev_thread;
   prev_thread = sparcle_current_thread;
@@ -162,27 +147,28 @@ void sparcle_yield() {
   assert(sparcle_current_thread == NULL ||
          sparcle_current_thread->scheduler_ == sparcle_current_scheduler);
 
-retry_:;
   sparcle_thread_t x = (sparcle_thread_t)atomic_load(&sparcle_current_scheduler->idle_threads_);
-retry_1:;
+retry:;
   if (x == NULL) {
     x = (sparcle_thread_t)atomic_exchange(
             &sparcle_current_scheduler->exhausted_threads_,
             (uintptr_t)NULL);
     if (x == NULL) {
-      // ここに入ったという事は以下のいずれかのケースのみ
-      // 1. 実行すべきスレッドが無くなった
-      // 2. 他のワーカーが入れ替えを行っている最中
-      // 3. 他のワーカーが入れ替えを完了した
-      goto retry_;
+      // 切り替えるべきスレッドが無くて、かつ今のスレッドも待つ訳では無いのなら
+      // 何もせずに呼び出し元へ戻る
+      if (sparcle_current_thread->state_ != SPARCLE_THREAD_STATE_SUSPEND &&
+          sparcle_current_thread->wait_queue_ == NULL &&
+          sparcle_current_thread->mutex_ == NULL)
+        return;
     }
     atomic_store(&sparcle_current_scheduler->idle_threads_, (uintptr_t)x->next_thread_);
   } else if (! atomic_compare_exchange_weak(&sparcle_current_scheduler->idle_threads_,
                                             (uintptr_t*)&x, (uintptr_t)x->next_thread_))
-    goto retry_1;
+    goto retry;
 
   sparcle_switch_context(x);
 }
+
 
 
 
@@ -191,12 +177,47 @@ static void* sparcle_worker_main(void* sched) {
   assert(sparcle_current_thread == NULL);
 
   sparcle_current_scheduler = sched;
-  sparcle_yield();
-  // ここに抜けて来るのは
-  // 1.スケジューラが停止したか、
-  // 2. ワーカーが減らされた
+  for (;;) {
+    sparcle_yield();
+    usleep(100000);
+  }
+
   return NULL;
 }
+
+
+
+void sparcle_scheduler_add_thread(sparcle_thread_t x) {
+  assert(x != NULL);
+  assert(x->next_thread_ == NULL);
+
+  sparcle_scheduler_t sched = x->scheduler_;
+  assert(sched != NULL);
+
+  x->next_thread_= (sparcle_thread_t)atomic_load(&sched->idle_threads_);
+  while (! atomic_compare_exchange_weak(&sched->idle_threads_,
+                                        (uintptr_t*)&x->next_thread_, (uintptr_t)x))
+    ; // spin
+
+  atomic_fetch_add(&sched->num_threads_, 1);
+  {
+    size_t n = atomic_load(&sched->num_workers_);
+    while (n < sched->max_workers_) {
+      if (atomic_compare_exchange_strong(&sched->num_workers_, &n, n + 1)) {
+        pthread_t th;
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+        pthread_attr_setstacksize(&attr, 16384);
+        pthread_create(&th, NULL, sparcle_worker_main, sched);
+        pthread_attr_destroy(&attr);
+      }
+    }
+  }
+}
+
+
+
 
 
 /** @} */
@@ -290,8 +311,6 @@ void sparcle_wait_queue_wait(sparcle_wait_queue_t* q) {
 
 
 sparcle_thread_t sparcle_wait_queue_signal(sparcle_wait_queue_t* q) {
-  assert(q != NULL);
-
   sparcle_thread_t x = (sparcle_thread_t)atomic_load(&q->q_);
   while (x != NULL) {
     if (atomic_compare_exchange_weak(&q->q_, (uintptr_t*)&x, (uintptr_t)x->next_thread_) ) {
