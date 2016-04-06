@@ -16,8 +16,8 @@ add_library(sparcle
   src/sparcle.c)
 set (CMAKE_CXX_COMPILER gcc)
 set (CMAKE_C_COMPILER gcc)
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu1z ~Wall")
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -Wall")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu1z ~Wall -pthread")
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -Wall -pthread")
 
 
 FIND_PACKAGE(Doxygen)
