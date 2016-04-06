@@ -114,7 +114,10 @@ static void sparcle_switch_context(sparcle_thread_t x) {
   sparcle_current_thread->mutex_ = NULL;
 
   if (prev_thread != NULL) {
-    if (prev_thread->wait_queue_ != NULL) {
+    if (prev_thread->state_ == SPARCLE_THREAD_STATE_EXIT) {
+      free(prev_thread->context_.uc_stack.ss_sp);
+      prev_thread->context_.uc_stack.ss_sp = NULL;
+    } else if (prev_thread->wait_queue_ != NULL) {
       prev_thread->state_ = SPARCLE_THREAD_STATE_WAIT;
       while (! atomic_compare_exchange_weak(&prev_thread->wait_queue_->q_,
                                             (uintptr_t*)&prev_thread->next_thread_,
@@ -264,7 +267,6 @@ void sparcle_thread_exit(void* retval) {
   sparcle_current_thread->retval_ = retval;
   sparcle_current_thread->state_ = SPARCLE_THREAD_STATE_EXIT;
 
-  // TODO: スタックの開放
   sparcle_yield();
 }
 
